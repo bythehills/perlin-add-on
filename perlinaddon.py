@@ -1,30 +1,23 @@
-import bpy, random
+import bpy, random, numpy
 
 
-length = 100 #displayed board
-smallestResLength = 400 #actual board size
-height = 50 #height
-gbLength = 50 #scale
-
-startLength = 100
-gradBoard = [[0] * gbLength for row in range(gbLength)] 
-#imagine grid overlaid on top of grid
-
-
-#this is length / gradBoard length (aka how big each cell is)
-oct1PerlinBoard = [[0] *  startLength
-                for row in range(startLength)]
-oct2PerlinBoard = [[0] *  startLength * 2
-                for row in range(startLength * 2)]
-oct3PerlinBoard = [[0] *  startLength * 4
-                for row in range(startLength * 4)]
+length = 150 #displayed board size
+smallestResLength = 200 #smallest resolution board size
+height = 80 #height
+gbLength = 10 #scales exponentially per octave, work with divisors of smallest resolution
+#10, 20, 40, etc
+startLength = length
+octaves = 3
 
 
 
 
-def calcGradVec():
+def calcGradVec(gradBoard):
+    #random unit vector 
+    
     for row in range(len(gradBoard)):
         for col in range(len(gradBoard[0])):
+            print(row, col)
             dx = random.randrange(0, 100)
             dx = float(dx/100)
             a2 = dx**2
@@ -39,28 +32,29 @@ def calcGradVec():
                 gradBoard[row][col] = (-dx, -dy)
             else:
                 gradBoard[row][col] = (dx, -dy )
+    return gradBoard
 
 def calcDotProduct(corner, cur):
-    a, b = corner
-    c, d, = cur
+    print(type(corner))
+    a = corner[0]
+    b = corner[1]
+    c = cur[0]
+    d = cur[1]
     return (a * c + b * d)
 
 def interpolate(a, b, t):
     return a + t *(b  - a)
 
-def perlin(board, x, y):
+def perlin(board, octaveGradBoard, x, y):
     #for every pixel, calculate distance from four points
     #REMINDER: COL IS X, ROW IS Y
-    perlinCellSize = len(board) // len(gradBoard)
-    perlinCols, perlinRows = len(gradBoard), len(gradBoard)
+    perlinCellSize = len(board) // len(octaveGradBoard)
+    perlinCols, perlinRows = len(octaveGradBoard), len(octaveGradBoard)
+    gradBoard = octaveGradBoard
     col = int((x)//perlinCellSize) 
     row = int((y)//perlinCellSize) 
-#    print("col", col, "row ", row)
-#    print("len board", len(board))
-#    print("perlinCellSize", perlinCellSize)
-#    print("perlinRowScols", perlinCols)
-#    print("length gradBoard", len(gradBoard))
-    cornerVectorTL = gradBoard[row][col]
+    cornerVectorTL = octaveGradBoard[row][col]
+    
     #Turn (x, y) into decimal points... 
     x = float(x/perlinCellSize)
     y = float(y/perlinCellSize)
@@ -98,6 +92,7 @@ def perlin(board, x, y):
     vecBL = calcDotProduct(cornerVectorBL, distanceBL)
     vecBR = calcDotProduct(cornerVectorBR, distanceBR)
     #average TL and TR
+    #use smoothstep function
     x1 = col
     Sx = 3 * (x - x1)**2 -  2 * (x - x1)**3
     a = interpolate(vecTL, vecTR, Sx)
@@ -105,28 +100,15 @@ def perlin(board, x, y):
     y1 = row
     Sy = 3*(y - y1)**2 - 2*(y - y1)**3
     final = interpolate(a, b, Sy)
-
     return (final + 0.3)
 
-def fillPerlinBoard(board):
+def fillPerlinBoard(board, octaveExp, octaveGradBoard):
+    octaveGradBoard = calcGradVec(octaveGradBoard)
     for pX in range(0, len(board)):
-        for pY in range(0, len(board)):
-            val = perlin(board, pX, pY)
-            board[pX][pY] = val
+      for pY in range(0, len(board)):
+        val = perlin(board, octaveGradBoard, pX, pY)
+        board[pX][pY] += val * 1/octaveExp #1/1, 1/2, 1/4
 
-def fillGrid(board, height):
-#newPerlinBoard should be same as length
-    fillPerlinBoard(oct1PerlinBoard)
-    fillPerlinBoard(oct2PerlinBoard)
-    fillPerlinBoard(oct3PerlinBoard)
-    for pX in range(0, smallestResLength):
-        for pY in range(0, smallestResLength):
-            val = oct1PerlinBoard[pX//4][pY//4]
-            val2 = oct2PerlinBoard[pX//2][pY//2]
-            val3 = oct3PerlinBoard[pX][pY]
-#            print("pX", pX, "pY", pY, "height", val2)
-            val = val3
-            board[pX][pY] = val
           
 #perlinBoard is of size[length][length] 
 def start():
@@ -165,13 +147,14 @@ def start():
         if (second, first) not in edges:
             finalEdges.append((first, second))
     
-    board = [[0] * smallestResLength for row in range(smallestResLength)] #im sorry my 2d list creation is all over the place
-    #what da hell is board.. i think it stores perlin values
-    calcGradVec()
-    fillGrid(board, height)
-#    fillPerlinBoard(board)
-    print(len(board))
-
+    board = [[0] * smallestResLength for row in range(smallestResLength)] 
+    #stores all perlin values
+    for octave in range(1, octaves + 1):
+        octaveExp = pow(2, octave-1) #1, 2, 4
+        currentGbLength = gbLength * octaveExp #10, 20, 40
+        octaveGradBoard = [[0] * currentGbLength for row in range(currentGbLength)] 
+        fillPerlinBoard(board, octaveExp, octaveGradBoard)
+   
     for face in faces:
         #aka [(0, 1, 2, 3)]
         for i in face: #get each vertex and raise it by index of face
@@ -182,9 +165,8 @@ def start():
                 boardRow = length - 1
             if boardCol == length: #aka if vertex is (x, 100, z)
                 boardCol = length - 1
-            print(boardRow, boardCol)
             verts[i] = (curVert[0], curVert[1], board[boardRow][boardCol] * height)
-       
+           
 #    print(verts)
 
     name = 'New Terrain'
